@@ -1,0 +1,32 @@
+{
+  "name": "ezboss-auth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.8.0 <25"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "dev": "tsx watch --env-file=.env src/index.ts",
+    "start": "node --env-file-if-exists=.env dist/index.js",
+    "db:generate": "tsx scripts/generate-schema.ts"
+  },
+  "dependencies": {
+    "@better-auth/oauth-provider": "1.7.17",
+    "@better-auth/passkey": "1.7.17",
+    "@simplewebauthn/server": "13.3.3",
+    "better-auth": "1.7.17",
+    "express": "5.2.1",
+    "pg": "8.22.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/node": "26.1.1",
+    "@types/pg": "8.20.0",
+    "tsx": "4.23.1",
+    "typescript": "7.0.2"
+  }
+}
