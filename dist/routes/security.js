@@ -2,10 +2,12 @@ import { Router } from 'express';
 import { fromNodeHeaders } from 'better-auth/node';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { AdminStepUp, AssuranceDenied } from '../services/adminStepUp.js';
-export function securityRoutes(auth, env, database) {
+import { AdminPasskeyRequired, AdminStepUp, AssuranceDenied } from '../services/adminStepUp.js';
+import { accountMergeRoutes } from './accountMerge.js';
+export function securityRoutes(auth, env, database, deliver) {
     const router = Router();
     router.get('/config', (_req, res) => res.json({ appOrigin: env.appOrigin, providers: env.GOOGLE_CLIENT_ID ? ['google'] : [],
+        googleMigrationEnabled: env.googleMigrationSubjects.size > 0,
         termsVersion: env.AUTH_TERMS_VERSION || null, privacyVersion: env.AUTH_PRIVACY_VERSION || null,
         termsURL: env.AUTH_TERMS_URL || null, privacyURL: env.AUTH_PRIVACY_URL || null }));
     router.use(async (req, res, next) => {
@@ -30,6 +32,7 @@ export function securityRoutes(auth, env, database) {
             res.status(503).json({ error: 'Authentication unavailable' });
         }
     });
+    router.use('/merge', accountMergeRoutes(auth, env, database, deliver));
     router.post('/status', async (_req, res) => {
         try {
             const consent = (await database.query('SELECT "acceptedTermsVersion","acceptedPrivacyVersion","termsAcceptedAt" FROM "user" WHERE id=$1', [res.locals.session.user.id])).rows[0];
@@ -57,7 +60,10 @@ export function securityRoutes(auth, env, database) {
             res.json(await admin.challenge(res.locals.session.user.id, res.locals.session.session.id));
         }
         catch (error) {
-            res.status(error instanceof AssuranceDenied ? 403 : 503).json({ error: 'Security verification unavailable. Enroll a passkey in account security.' });
+            if (error instanceof AdminPasskeyRequired) {
+                return res.status(403).json({ code: 'ADMIN_PASSKEY_REQUIRED', error: 'Enroll a passkey in account security.' });
+            }
+            res.status(error instanceof AssuranceDenied ? 403 : 503).json({ error: 'Security verification unavailable' });
         }
     });
     router.post('/admin/verify', async (req, res) => {

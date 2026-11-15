@@ -14,8 +14,12 @@ export function readEnvironment(input: NodeJS.ProcessEnv = process.env) {
     DEPLOYMENT_ENV: z.enum(['development', 'staging', 'production']),
     BETTER_AUTH_URL: z.string(), APP_ORIGIN: z.string(), DATABASE_URL: z.string().url(),
     BETTER_AUTH_SECRET: secret, AUTH_INTERNAL_SECRET: secret,
-    MAIL_API_KEY: z.string().min(1), MAIL_FROM: z.email(),
+    MAILGUN_API_KEY: z.string().trim().min(1),
+    MAILGUN_DOMAIN: z.hostname(),
+    MAILGUN_FROM: z.string().regex(/^[^\r\n]+$/).trim().refine(value => z.email().safeParse(value.match(/<([^<>]+)>$/)?.[1] ?? value).success),
+    MAILGUN_REGION: z.enum(['us', 'eu', 'au']).default('us'),
     GOOGLE_CLIENT_ID: z.string().optional(), GOOGLE_CLIENT_SECRET: z.string().optional(),
+    GOOGLE_MIGRATION_SUBJECTS: z.string().optional(),
     AUTH_TERMS_VERSION: z.string().optional(), AUTH_PRIVACY_VERSION: z.string().optional(),
     AUTH_TERMS_URL: z.string().url().optional(), AUTH_PRIVACY_URL: z.string().url().optional(),
     PORT: z.coerce.number().int().min(1).max(65535).default(3005),
@@ -23,6 +27,9 @@ export function readEnvironment(input: NodeJS.ProcessEnv = process.env) {
   // Never include Zod input values in configuration failures.
   if (!parsed.success) throw new Error(`Invalid auth configuration: ${parsed.error.issues.map(i => i.path.join('.')).join(', ')}`);
   const env = parsed.data;
+  const googleMigrationSubjects = new Set((env.GOOGLE_MIGRATION_SUBJECTS ?? '').split(',').filter(Boolean));
+  if ([...googleMigrationSubjects].some(subject => !/^[0-9]{1,64}$/.test(subject)) ||
+      (googleMigrationSubjects.size > 0 && !env.GOOGLE_CLIENT_ID)) throw new Error('Invalid Google migration configuration');
   if(Boolean(env.GOOGLE_CLIENT_ID)!==Boolean(env.GOOGLE_CLIENT_SECRET))throw new Error('Google requires both server-side OAuth settings');
   const consent=[env.AUTH_TERMS_VERSION,env.AUTH_PRIVACY_VERSION,env.AUTH_TERMS_URL,env.AUTH_PRIVACY_URL];
   if(consent.some(Boolean) && !consent.every(Boolean))throw new Error('Legal publication requires both approved versions and URLs');
@@ -36,6 +43,6 @@ export function readEnvironment(input: NodeJS.ProcessEnv = process.env) {
   }
   const db = new URL(env.DATABASE_URL);
   if (!['postgres:', 'postgresql:'].includes(db.protocol)) throw new Error('PostgreSQL is required');
-  return { ...env, baseURL, appOrigin, secureCookies: new URL(baseURL).protocol === 'https:' };
+  return { ...env, baseURL, appOrigin, googleMigrationSubjects, secureCookies: new URL(baseURL).protocol === 'https:' };
 }
 export type Environment = ReturnType<typeof readEnvironment>;

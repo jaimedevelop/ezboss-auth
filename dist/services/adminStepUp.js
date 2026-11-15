@@ -2,6 +2,8 @@ import { generateAuthenticationOptions, verifyAuthenticationResponse } from '@si
 export class AssuranceDenied extends Error {
     constructor() { super('Security verification failed'); }
 }
+export class AdminPasskeyRequired extends AssuranceDenied {
+}
 export class AdminStepUp {
     db;
     env;
@@ -12,7 +14,7 @@ export class AdminStepUp {
     async challenge(userId, sessionId) {
         const keys = await this.db.query('SELECT "credentialID",transports FROM passkey WHERE "userId"=$1', [userId]);
         if (!keys.rowCount)
-            throw new AssuranceDenied();
+            throw new AdminPasskeyRequired();
         const options = await generateAuthenticationOptions({ rpID: new URL(this.env.appOrigin).hostname, userVerification: 'required',
             allowCredentials: keys.rows.map(key => ({ id: key.credentialID })) });
         const result = await this.db.query(`INSERT INTO admin_challenges("userId","sessionId",challenge)
@@ -61,10 +63,10 @@ export class AdminStepUp {
             client.release();
         }
     }
-    async recent(userId, sessionId) {
+    async verifiedAt(userId, sessionId) {
         const proof = await this.db.query(`SELECT a."verifiedAt" FROM admin_assurance a JOIN session s ON s.id=a."sessionId" AND s."userId"=a."userId"
    WHERE a."userId"=$1 AND a."sessionId"=$2 AND a.method='webauthn-uv' AND a."verifiedAt"<=now()
-    AND a."verifiedAt">=now()-interval '5 minutes' AND s."expiresAt">now()`, [userId, sessionId]);
+    AND s."expiresAt">now()`, [userId, sessionId]);
         return proof.rows[0]?.verifiedAt?.toISOString();
     }
 }

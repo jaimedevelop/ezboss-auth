@@ -26,10 +26,20 @@ export function internalVerification(auth: Auth, env: Environment, database: Poo
       if (!result || result.session.expiresAt.getTime() <= Date.now()) {
         res.status(401).json({ error: 'Invalid session' }); return;
       }
-      const adminVerifiedAt = await new AdminStepUp(database,env).recent(result.user.id,result.session.id);
+      const adminVerifiedAt = await new AdminStepUp(database,env).verifiedAt(result.user.id,result.session.id);
       const consent=(await database.query('SELECT "acceptedTermsVersion","acceptedPrivacyVersion","termsAcceptedAt" FROM "user" WHERE id=$1',[result.user.id])).rows[0];
       const legalAccepted=Boolean(env.AUTH_TERMS_VERSION && consent?.termsAcceptedAt && consent.acceptedTermsVersion===env.AUTH_TERMS_VERSION && consent.acceptedPrivacyVersion===env.AUTH_PRIVACY_VERSION);
-      res.json({ legalAccepted, ...(adminVerifiedAt ? {adminVerifiedAt}:{}), provider: 'better-auth', credentialKind: 'session', issuer: `${env.baseURL}/api/auth`,
+      let migrationGoogleSubject: string | undefined;
+      if (env.googleMigrationSubjects.size && body.transport === 'cookie') {
+        const accounts = await database.query(`SELECT a."accountId" FROM account a
+          JOIN verification v ON v.id=$3 AND v.identifier='ezboss-google-migration'
+            AND v.value=a."userId" AND v."expiresAt">now()
+          WHERE a."providerId"=$1 AND a."userId"=$2 LIMIT 2`,
+          ['google', result.user.id, `google-migration:${result.session.id}`]);
+        const subject = accounts.rows[0]?.accountId;
+        if (accounts.rowCount === 1 && env.googleMigrationSubjects.has(subject)) migrationGoogleSubject = subject;
+      }
+      res.json({ legalAccepted, ...(migrationGoogleSubject ? {migrationGoogleSubject}:{}), ...(adminVerifiedAt ? {adminVerifiedAt}:{}), provider: 'better-auth', credentialKind: 'session', issuer: `${env.baseURL}/api/auth`,
         subject: result.user.id, sessionId: result.session.id, expiresAt: result.session.expiresAt.toISOString(),
         email: result.user.email, emailVerified: result.user.emailVerified });
     } catch {

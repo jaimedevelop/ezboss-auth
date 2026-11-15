@@ -3,11 +3,12 @@ import type { Pool } from 'pg';
 import type { Environment } from '../env.js';
 
 export class AssuranceDenied extends Error { constructor(){super('Security verification failed');} }
+export class AdminPasskeyRequired extends AssuranceDenied {}
 export class AdminStepUp {
  constructor(private readonly db:Pool,private readonly env:Environment){}
  async challenge(userId:string,sessionId:string) {
   const keys=await this.db.query('SELECT "credentialID",transports FROM passkey WHERE "userId"=$1',[userId]);
-  if(!keys.rowCount) throw new AssuranceDenied();
+  if(!keys.rowCount) throw new AdminPasskeyRequired();
   const options=await generateAuthenticationOptions({rpID:new URL(this.env.appOrigin).hostname,userVerification:'required',
    allowCredentials:keys.rows.map(key=>({id:key.credentialID}))});
   const result=await this.db.query(`INSERT INTO admin_challenges("userId","sessionId",challenge)
@@ -41,10 +42,10 @@ export class AdminStepUp {
   }catch(error){await client.query('ROLLBACK');throw error;}
   finally{client.release();}
  }
- async recent(userId:string,sessionId:string){
+ async verifiedAt(userId:string,sessionId:string){
   const proof=await this.db.query(`SELECT a."verifiedAt" FROM admin_assurance a JOIN session s ON s.id=a."sessionId" AND s."userId"=a."userId"
    WHERE a."userId"=$1 AND a."sessionId"=$2 AND a.method='webauthn-uv' AND a."verifiedAt"<=now()
-    AND a."verifiedAt">=now()-interval '5 minutes' AND s."expiresAt">now()`,[userId,sessionId]);
+    AND s."expiresAt">now()`,[userId,sessionId]);
   return proof.rows[0]?.verifiedAt?.toISOString() as string|undefined;
  }
 }

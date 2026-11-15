@@ -5,10 +5,13 @@ import { z } from 'zod';
 import type { Pool } from 'pg';
 import type { Auth } from '../auth.js';
 import type { Environment } from '../env.js';
-import { AdminStepUp, AssuranceDenied } from '../services/adminStepUp.js';
-export function securityRoutes(auth:Auth,env:Environment,database:Pool) {
+import { AdminPasskeyRequired, AdminStepUp, AssuranceDenied } from '../services/adminStepUp.js';
+import { accountMergeRoutes } from './accountMerge.js';
+import type { DeliverMail } from '../services/email.js';
+export function securityRoutes(auth:Auth,env:Environment,database:Pool,deliver:DeliverMail) {
   const router=Router();
   router.get('/config',(_req,res)=>res.json({appOrigin:env.appOrigin,providers:env.GOOGLE_CLIENT_ID?['google']:[],
+    googleMigrationEnabled:env.googleMigrationSubjects.size>0,
     termsVersion:env.AUTH_TERMS_VERSION||null,privacyVersion:env.AUTH_PRIVACY_VERSION||null,
     termsURL:env.AUTH_TERMS_URL||null,privacyURL:env.AUTH_PRIVACY_URL||null}));
   router.use(async(req,res,next)=>{
@@ -25,6 +28,7 @@ export function securityRoutes(auth:Auth,env:Environment,database:Pool) {
       res.locals.session=session;next();
     }catch{res.status(503).json({error:'Authentication unavailable'});}
   });
+  router.use('/merge',accountMergeRoutes(auth,env,database,deliver));
   router.post('/status',async(_req,res)=>{
     try{const consent=(await database.query('SELECT "acceptedTermsVersion","acceptedPrivacyVersion","termsAcceptedAt" FROM "user" WHERE id=$1',[res.locals.session.user.id])).rows[0];
       res.json({legalAccepted:Boolean(env.AUTH_TERMS_VERSION && consent?.termsAcceptedAt && consent.acceptedTermsVersion===env.AUTH_TERMS_VERSION && consent.acceptedPrivacyVersion===env.AUTH_PRIVACY_VERSION)});
@@ -39,7 +43,12 @@ export function securityRoutes(auth:Auth,env:Environment,database:Pool) {
   const admin=new AdminStepUp(database,env);
   router.post('/admin/challenge',async(_req,res)=>{
     try{res.json(await admin.challenge(res.locals.session.user.id,res.locals.session.session.id));}
-    catch(error){res.status(error instanceof AssuranceDenied?403:503).json({error:'Security verification unavailable. Enroll a passkey in account security.'});}
+    catch(error){
+      if(error instanceof AdminPasskeyRequired){
+        return res.status(403).json({code:'ADMIN_PASSKEY_REQUIRED',error:'Enroll a passkey in account security.'});
+      }
+      res.status(error instanceof AssuranceDenied?403:503).json({error:'Security verification unavailable'});
+    }
   });
   router.post('/admin/verify',async(req,res)=>{
     const parsed=z.object({transactionId:z.uuid(),response:z.object({id:z.string(),rawId:z.string(),type:z.literal('public-key'),clientExtensionResults:z.record(z.string(),z.unknown()),response:z.object({clientDataJSON:z.string(),authenticatorData:z.string(),signature:z.string(),userHandle:z.string().optional()})})}).strict().safeParse(req.body);

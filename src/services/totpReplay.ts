@@ -18,7 +18,7 @@ export function matchingTotpStep(secret: Uint8Array, code: string, now = Date.no
   }
   return matched;
 }
-function decodeSecret(value: string): Uint8Array {
+export function decodeSecret(value: string): Uint8Array {
   // Match Better Auth's documented Auth0 import representation as well as generated UTF-8 secrets.
   if (!value.startsWith('base32:')) return Buffer.from(value, 'utf8');
   let bits = '';
