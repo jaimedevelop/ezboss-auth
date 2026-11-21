@@ -16,3 +16,10 @@ test('configuration rejects unsafe origins, shared secrets and malformed databas
  }
  assert.throws(() => readEnvironment({...proofEnvironment, BETTER_AUTH_SECRET:'sensitive'}), e => !String(e).includes('sensitive'));
 });
+
+test('Google migration accepts spaced subject lists and identifies configuration errors', () => {
+ const oauth = {...proofEnvironment, GOOGLE_CLIENT_ID:'client', GOOGLE_CLIENT_SECRET:'secret'};
+ assert.deepEqual([...readEnvironment({...oauth, GOOGLE_MIGRATION_SUBJECTS:' 001, 234 '}).googleMigrationSubjects], ['001','234']);
+ assert.throws(() => readEnvironment({...oauth, GOOGLE_MIGRATION_SUBJECTS:'001,email@example.com'}), /comma-separated numeric Google subject IDs/);
+ assert.throws(() => readEnvironment({...proofEnvironment, GOOGLE_MIGRATION_SUBJECTS:'001'}), /requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET/);
+});

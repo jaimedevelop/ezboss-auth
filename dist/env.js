@@ -27,10 +27,13 @@ export function readEnvironment(input = process.env) {
     if (!parsed.success)
         throw new Error(`Invalid auth configuration: ${parsed.error.issues.map(i => i.path.join('.')).join(', ')}`);
     const env = parsed.data;
-    const googleMigrationSubjects = new Set((env.GOOGLE_MIGRATION_SUBJECTS ?? '').split(',').filter(Boolean));
-    if ([...googleMigrationSubjects].some(subject => !/^[0-9]{1,64}$/.test(subject)) ||
-        (googleMigrationSubjects.size > 0 && !env.GOOGLE_CLIENT_ID))
-        throw new Error('Invalid Google migration configuration');
+    const googleMigrationSubjects = new Set((env.GOOGLE_MIGRATION_SUBJECTS ?? '').split(',').map(subject => subject.trim()).filter(Boolean));
+    if ([...googleMigrationSubjects].some(subject => !/^[0-9]{1,64}$/.test(subject))) {
+        throw new Error('GOOGLE_MIGRATION_SUBJECTS must contain comma-separated numeric Google subject IDs');
+    }
+    if (googleMigrationSubjects.size && (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET)) {
+        throw new Error('GOOGLE_MIGRATION_SUBJECTS requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET');
+    }
     if (Boolean(env.GOOGLE_CLIENT_ID) !== Boolean(env.GOOGLE_CLIENT_SECRET))
         throw new Error('Google requires both server-side OAuth settings');
     const consent = [env.AUTH_TERMS_VERSION, env.AUTH_PRIVACY_VERSION, env.AUTH_TERMS_URL, env.AUTH_PRIVACY_URL];
